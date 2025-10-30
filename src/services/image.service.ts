@@ -17,8 +17,17 @@ export class ImageService {
     private cacheDir: string;
 
     constructor() {
-        this.cacheDir = process.env.CACHE_DIR || './cache';
-        if (!fs.existsSync(this.cacheDir)) {
+        // Use /tmp in production for serverless environments
+        const defaultDir = process.env.NODE_ENV === 'production' ? '/tmp/cache' : './cache';
+        this.cacheDir = process.env.CACHE_DIR || defaultDir;
+
+        try {
+            if (!fs.existsSync(this.cacheDir)) {
+                fs.mkdirSync(this.cacheDir, { recursive: true });
+            }
+        } catch (error) {
+            console.error('Failed to create cache directory:', error);
+            this.cacheDir = '/tmp/cache';
             fs.mkdirSync(this.cacheDir, { recursive: true });
         }
     }
@@ -28,6 +37,16 @@ export class ImageService {
         topCountries: Country[],
         lastRefreshed: string
     ): Promise<string> {
+        // Check if canvas is available before attempting to generate image
+        if (!canvasAvailable || !createCanvas) {
+            console.warn('⚠️  Canvas not available, creating placeholder image');
+            // Create a placeholder file instead
+            const imagePath = path.join(this.cacheDir, 'summary.png');
+            const placeholderContent = `Summary Image Placeholder\nTotal Countries: ${totalCountries}\nLast Refreshed: ${lastRefreshed}`;
+            fs.writeFileSync(imagePath, placeholderContent);
+            return imagePath;
+        }
+
         const width = 800;
         const height = 600;
         const canvas = createCanvas(width, height);

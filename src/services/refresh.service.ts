@@ -31,10 +31,14 @@ export class RefreshService {
 
     async refreshCountries(): Promise<{ message: string; total_countries: number }> {
         try {
+            console.log('🔄 Starting country data refresh...');
+
             const [countriesData, exchangeRates] = await Promise.all([
                 this.externalAPI.fetchCountries(),
                 this.externalAPI.fetchExchangeRates()
             ]);
+
+            console.log(`✅ Fetched ${countriesData.length} countries`);
 
             for (const countryData of countriesData) {
                 let currencyCode: string | null = null;
@@ -74,24 +78,42 @@ export class RefreshService {
                 await this.countryService.upsertCountry(country);
             }
 
+            console.log('✅ All countries saved to database');
+
             const timestamp = new Date().toISOString();
             await this.countryService.setLastRefreshedAt(timestamp);
 
             const totalCountries = await this.countryService.getTotalCountries();
             const topCountries = await this.countryService.getTopCountriesByGDP(5);
-            await this.imageService.generateSummaryImage(
-                totalCountries,
-                topCountries,
-                timestamp
-            );
+
+            // Try to generate image, but don't fail the entire refresh if it errors
+            try {
+                await this.imageService.generateSummaryImage(
+                    totalCountries,
+                    topCountries,
+                    timestamp
+                );
+                console.log('✅ Summary image generated');
+            } catch (imageError) {
+                console.warn('⚠️  Image generation failed (non-critical):', imageError);
+                // Continue - image generation is optional
+            }
+
+            console.log(`✅ Refresh complete: ${totalCountries} countries`);
 
             return {
                 message: 'Countries data refreshed successfully',
                 total_countries: totalCountries
             };
         } catch (error) {
-            if (error instanceof Error && error.message.includes('Could not fetch data')) {
-                throw error;
+            console.error('❌ Refresh failed:', error);
+            if (error instanceof Error) {
+                if (error.message.includes('Could not fetch data')) {
+                    throw error;
+                }
+                // Include the actual error message for debugging
+                console.error('Full error:', error.stack);
+                throw new Error(`Failed to refresh countries data: ${error.message}`);
             }
             throw new Error('Failed to refresh countries data');
         }
